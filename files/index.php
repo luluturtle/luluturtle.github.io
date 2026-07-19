@@ -1,42 +1,50 @@
 <?php
-
-/*
- * Converts a filesystem tree to a PHP array.
- */
-function getDirContents($path) {
-    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path));
-    $phpFileName = basename(__FILE__);
-    $data = array(); 
-    foreach ($rii as $file){    
-        if (!$file->isDir()){
-            $link = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-            
-            if(strpos($link, $phpFileName) !== false){
-                $link =    str_replace($phpFileName, "", $link);
-            }
-            $pathF = $file->getPathname();
-            $data[] = [ 'path' => $pathF , 'size' => filesize($file), 'downloadURL' => $link . $pathF,'sha1' => sha1_file($file)];
-        }
-    }
-    \usort($data, function($a, $b) {
-                $aa = isset($a['file']) ? $a['file'] : $a['path'];
-                $bb = isset($b['file']) ? $b['file'] : $b['path'];
-
-                return \strcmp($aa, $bb);
-        });
-
-        return $data;
+function ScanDirectory($Directory, $tableau=false){
+$slash = '';
+	$MyDirectory = opendir($Directory) or die('Erreur');
+	while($Entry = @readdir($MyDirectory)){
+		if($Entry != '.' && $Entry != '..' && $Entry != 'index.php' && $Entry != ".htaccess" && $Entry != "indexold.php" && $Entry != "test.php" && $Entry != "libraries"){
+			if(is_dir($Directory.'/'.$Entry)&& $Entry != '.' && $Entry != '..'){
+				$slash = '/';			
+			}
+                        else
+                        {
+                         $slash = '';
+                        }
+			$tableau[] = substr($Directory.'/'.$Entry, strlen(strstr($Directory.'/'.$Entry, '/', true))+1).$slash;
+		}
+		if(is_dir($Directory.'/'.$Entry)&& $Entry != '.' && $Entry != '..'){
+			$tableau = ScanDirectory($Directory.'/'.$Entry, $tableau);
+		}
+	}
+	closedir($MyDirectory);
+	return $tableau;
 }
-
-/*
- * Converts a filesystem tree to a JSON representation.
- */
-function dir_to_json($dir)
-{
-        $data = getDirContents($dir);
-        $data = json_encode($data, JSON_PRETTY_PRINT);
-
-        return str_replace("\\", "/", $data);;
+ 
+Header('Content-type: text/xml');
+$xml = new SimpleXMLElement('<xml/>');
+ 
+ 
+$base = $xml->addChild('ListBucketResult');
+#$base->addChild('Name', "ressources");
+#$base->addChild('Prefix');
+#$base->addChild('Marker');
+#$base->addChild('MaxKeys', "1000");
+#$base->addChild('IsTruncated', 'false');
+ 
+foreach(ScanDirectory('.') as $key => $value){
+	$stat = stat($value);
+	$content = $base->addChild('Contents');
+	$content->addChild('Key', $value);
+	
+	if(is_dir($value)&& $value != '.' && $value != '..'){
+		$content->addChild('ETag', '"'.md5($value).'"');
+		$content->addChild('Size', 0);
+	}else{
+		$content->addChild('Size', $stat['size']);
+		$content->addChild('ETag', '"'.md5_file($value).'"');
+	}
 }
-
-echo '{ "extfiles":' . str_replace("//", "/", dir_to_json('./')) . '}';
+ 
+print($xml->asXML());
+?>
